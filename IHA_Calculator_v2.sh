@@ -5,6 +5,8 @@ echo "This script was developed by the Deparment of Physical Geography of Utrech
 dis1="$1"    # Discharge pre-alterations input
 dis2="$2"    # Discharge post-alterations input
 
+# IDEA: Could add output folder to save all files directly in the right location, but would require a lot of editing.
+
 # Start up
 echo ""
 echo "Starting the calculator for Indicators of Hydrologic Alterations (Martinez Santa-Maria et al., 2008)."
@@ -21,6 +23,14 @@ echo "Three of these have monthly values that could be given their own weight in
 echo "This would mean that in total there would be 59 parameters (4 par x 12 months + 11 par)."
 echo "The monthly parameters would then contribute to 80%+ of the final average."
 read -p "Should monthly parameters be 12 different IAH values (y/n): " multipar
+case "$multipar" in
+  Y|y|N|n)
+  ;;
+  *)
+  echo "Wrong input, use y or n."
+  exit;;
+esac
+
 
 # Ask for information 
 read -p "Environmental starting year: " ESY
@@ -67,15 +77,13 @@ cdo -L -ymonavg -selyear,$envs/$enve $dis1 tmp_ma1.nc
 cdo -L -ymonavg -selyear,$alts/$alte $dis2 tmp_ma2.nc
 
 # IAH 1b Ratio
-if [ $multipar == "y" ]
-then
-cdo -L -div tmp_ma2.nc tmp_ma1.nc tmp_IAH1b.nc
-elif [ $multipar == "n" ]
-then
-cdo -L -timavg -div tmp_ma2.nc tmp_ma1.nc tmp_IAH1b.nc
+if [[ $multipar =~ ^[Yy]$ ]]; then
+  cdo -L -div tmp_ma2.nc tmp_ma1.nc tmp_IAH1b.nc
+elif [[ $multipar =~ ^[Nn]$ ]]; then
+  cdo -L -timavg -div tmp_ma2.nc tmp_ma1.nc tmp_IAH1b.nc
 else
-echo "Wrong input, next time choose y or n. Average taken as default." 
-cdo -L -timavg -div tmp_ma2.nc tmp_ma1.nc tmp_IAH1b.nc
+  echo "Wrong input, next time choose y or n. Average taken as default." 
+  cdo -L -timavg -div tmp_ma2.nc tmp_ma1.nc tmp_IAH1b.nc
 fi
 cdo -L -ifthenelse -gtc,1 tmp_IAH1b.nc -div tmp_1.nc tmp_IAH1b.nc tmp_IAH1b.nc IAH1b.nc
 echo "Completed: IAH1b"
@@ -191,37 +199,33 @@ echo ""
 echo "Calculation: IAH 12"
 echo "Calculating the Environmental Regime"
 tmp_envs=$envs
-while [ $tmp_envs -le $enve ]
-do
-echo ""
-echo "Calculating year: $tmp_envs"
-cdo -L -gt -selyear,$tmp_envs discharge_dailyTot_Environmental -timavg -selyear,$tmp_envs tmp_1y95.nc tmp_env95$tmp_envs.nc
-let "tmp_envs = $tmp_envs + 1"
+while [ $tmp_envs -le $enve ]; do
+  echo ""
+  echo "Calculating year: $tmp_envs"
+  cdo -L -gt -selyear,$tmp_envs $dis1 -timavg -selyear,$tmp_envs tmp_1y95.nc tmp_env95$tmp_envs.nc
+  let "tmp_envs = $tmp_envs + 1"
 done
 cdo mergetime tmp_env95* tmp_env_final.nc
 
 tmp_alts=$alts
 echo "Calculating the Altered Regime"
-while [ $tmp_alts -le $alte ]
-do
-echo ""
-echo "Calculating year: $tmp_alts"
-cdo -L -gt -selyear,$tmp_alts discharge_dailyTot_BAU -timavg -selyear,$tmp_alts tmp_2y95.nc tmp_alt95$tmp_alts.nc
-let "tmp_alts = $tmp_alts + 1"
+while [ $tmp_alts -le $alte ]; do
+  echo ""
+  echo "Calculating year: $tmp_alts"
+  cdo -L -gt -selyear,$tmp_alts $dis2 -timavg -selyear,$tmp_alts tmp_2y95.nc tmp_alt95$tmp_alts.nc
+  let "tmp_alts = $tmp_alts + 1"
 done
 cdo mergetime tmp_alt95* tmp_alt_final.nc
 
 # IAH 12 Ratio
 cdo -L -sub tmp_1.nc -mulc,0.2 -abs -sub -ymonavg -monsum tmp_alt_final.nc -ymonavg -monsum tmp_env_final.nc tmp_IAH12.nc
-if [ $multipar == "y" ]
-then
-cdo -L -ifthen -gtc,0 tmp_IAH12.nc tmp_IAH12.nc IAH12.nc
-elif [ $multipar == "n" ]
-then
-cdo -L -timavg -ifthen -gtc,0 tmp_IAH12.nc tmp_IAH12.nc IAH12.nc
+if [[ $multipar =~ ^[Yy]$ ]]; then
+  cdo -L -setrtoc,-inf,0,0 tmp_IAH12.nc IAH12.nc
+elif [[ $multipar =~ ^[Nn]$ ]]; then
+  cdo -L -timavg -setrtoc,-inf,0,0 tmp_IAH12.nc IAH12.nc
 else
-echo "Average taken as default." 
-cdo -L -timavg -ifthen -gtc,0 tmp_IAH12.nc tmp_IAH12.nc IAH12.nc
+  echo "Average taken as default." 
+  cdo -L -timavg -setrtoc,-inf,0,0 tmp_IAH12.nc IAH12.nc
 fi
 
 # Remove excess files
@@ -284,22 +288,20 @@ echo ""
 echo "Calculation: IAH 18"
 # IAH 18: Days per month no flow - Q = 0 
 # IAH 18: Days per month no flow - Q = 0 
-cdo -L -selyear,$envs/$enve -eqc,0 discharge_dailyTot_Environmental tmp_1days0.nc
+cdo -L -selyear,$envs/$enve -eqc,0 $dis1 tmp_1days0.nc
 cdo -L -ymonavg -monsum tmp_1days0.nc tmp_1avgdays0.nc
-cdo -L -selyear,$alts/$alte -eqc,0 discharge_dailyTot_BAU tmp_2days0.nc
+cdo -L -selyear,$alts/$alte -eqc,0 $dis2 tmp_2days0.nc
 cdo -L -ymonavg -monsum tmp_2days0.nc tmp_2avgdays0.nc
 
 # IAH 18 Ratio
 cdo -L -sub tmp_1.nc -mulc,0.2 -abs -sub -ymonsum tmp_2avgdays0.nc -ymonsum tmp_1avgdays0.nc tmp_IAH18.nc
-if [ $multipar == "y" ]
-then
-cdo -L -ifthen -gtc,0 tmp_IAH18.nc tmp_IAH18.nc IAH18.nc
-elif [ $multipar == "n" ]
-then
-cdo -L -timavg -ifthen -gtc,0 tmp_IAH18.nc tmp_IAH18.nc IAH18.nc
+if [[ $multipar =~ ^[Yy]$ ]]; then
+  cdo -L -setrtoc,-inf,0,0 tmp_IAH18.nc IAH18.nc
+elif [[ $multipar =~ ^[Nn]$ ]]; then
+  cdo -L -timavg -setrtoc,-inf,0,0 tmp_IAH18.nc IAH18.nc
 else
-echo "Average taken as default." 
-cdo -L -timavg -ifthen -gtc,0 tmp_IAH18.nc tmp_IAH18.nc IAH18.nc
+  echo "Average taken as default." 
+  cdo -L -timavg -setrtoc,-inf,0,0 tmp_IAH18.nc IAH18.nc
 fi
 
 
@@ -308,37 +310,33 @@ echo ""
 echo "Calculation: IAH 19"
 # IAH 19: Days per month flow Q < Q95%
 tmp_envs=$envs
-while [ $tmp_envs -le $enve ]
-do
-echo ""
-echo "Calculating year: $tmp_envs"
-cdo -L -gt -selyear,$tmp_envs discharge_dailyTot_Environmental -timavg -selyear,$tmp_envs tmp_1y05.nc tmp_env05$tmp_envs.nc
-let "tmp_envs = $tmp_envs + 1"
+while [ $tmp_envs -le $enve ]; do
+  echo ""
+  echo "Calculating year: $tmp_envs"
+  cdo -L -lt -selyear,$tmp_envs $dis1 -timavg -selyear,$tmp_envs tmp_1y05.nc tmp_env05$tmp_envs.nc
+  let "tmp_envs = $tmp_envs + 1"
 done
 cdo mergetime tmp_env05* tmp_env_final.nc
 
 tmp_alts=$alts
 echo "Calculating the Altered Regime"
-while [ $tmp_alts -le $alte ]
-do
-echo ""
-echo "Calculating year: $tmp_alts"
-cdo -L -gt -selyear,$tmp_alts discharge_dailyTot_BAU -timavg -selyear,$tmp_alts tmp_2y05.nc tmp_alt05$tmp_alts.nc
-let "tmp_alts = $tmp_alts + 1"
+while [ $tmp_alts -le $alte ]; do
+  echo ""
+  echo "Calculating year: $tmp_alts"
+  cdo -L -lt -selyear,$tmp_alts $dis2 -timavg -selyear,$tmp_alts tmp_2y05.nc tmp_alt05$tmp_alts.nc
+  let "tmp_alts = $tmp_alts + 1"
 done
 cdo mergetime tmp_alt05* tmp_alt_final.nc
 
 # IAH 19 Ratio
 cdo -L -sub tmp_1.nc -mulc,0.2 -abs -sub -ymonavg -monsum tmp_alt_final.nc -ymonavg -monsum tmp_env_final.nc tmp_IAH19.nc
-if [ $multipar == "y" ]
-then
-cdo -L -ifthen -gtc,0 tmp_IAH19.nc tmp_IAH19.nc IAH19.nc
-elif [ $multipar == "n" ]
-then
-cdo -L -timavg -ifthen -gtc,0 tmp_IAH19.nc tmp_IAH19.nc IAH19.nc
+if [[ $multipar =~ ^[Yy]$ ]]; then
+  cdo -L -setrtoc,-inf,0,0 tmp_IAH19.nc IAH19.nc
+elif [[ $multipar =~ ^[Nn]$ ]]; then
+  cdo -L -timavg -setrtoc,-inf,0,0 tmp_IAH19.nc IAH19.nc
 else
-echo "Average taken as default." 
-cdo -L -timavg -ifthen -gtc,0 tmp_IAH19.nc tmp_IAH19.nc IAH19.nc
+  echo "Average taken as default." 
+  cdo -L -timavg -setrtoc,-inf,0,0 tmp_IAH19.nc IAH19.nc
 fi
 
 
@@ -350,28 +348,53 @@ echo ""
 read -p "Lower limit discharge for the average IAH output in m3/s: " variable1
 echo "Creating a mask for all flows that have an extreme drought value above $variable1 m3/s."
 # Create mask for rivers
-cdo -L -ifthen -gtc,$variable1 tmp_1ya05.nc tmp_1.nc river_mask.nc
+cdo -L -ifthen -gtc,$variable1 -timavg $dis1 tmp_1.nc river_mask.nc
 
 echo ""
 echo "Calculating the average alteration factor."
 # Average all IAHs
-rm IAH_average.nc
+# Check if IAH Averages already exist, if so, deleted them.
+if test -f IAH_*; then
+  rm IAH_*
+fi
+
+cdo -L -timavg -ensavg IAH* IndicatorsTotalAverage.nc
 cdo -L -timavg -ifthen river_mask.nc -ensavg IAH* IAH_average.nc
+
+# Habitual, Flood and Drought for in-depth analysis
+echo "Calculating Habitual, Flood, and Drought averages"
+# Habitual
+#~ cdo -L -timavg -ensavg IAH1.nc IAH1b.nc IAH2.nc IAH4.nc IndicatorsHabitualTotalAverage.nc
+cdo -L -timavg -ifthen river_mask.nc -ensavg IAH1.nc IAH1b.nc IAH2.nc IAH4.nc IAH_HabitualAverage.nc
+
+# Flood
+#~ cdo -L -timavg -ensavg IAH5.nc IAH8.nc IAH9.nc IAH10.nc IAH12.nc IndicatorsFloodTotalAverage.nc
+cdo -L -timavg -ifthen river_mask.nc -ensavg IAH5.nc IAH8.nc IAH9.nc IAH10.nc IAH12.nc IAH_FloodAverage.nc
+
+# Drought
+#~ cdo -L -timavg -ensavg IAH13.nc IAH14.nc IAH15.nc IAH16.nc IAH18.nc IAH19.nc IndicatorsDroughtTotalAverage.nc
+cdo -L -timavg -ifthen river_mask.nc -ensavg IAH13.nc IAH14.nc IAH15.nc IAH16.nc IAH18.nc IAH19.nct IAH_DroughtAverage.nc
 
 echo ""
 echo "Indicators of Hydrologic Alteration completed"
 
 # Remove all temporal files.
 read -p "Remove all temporary files created for calculations (y/n):" variable2
-if [ $variable2 == "y" ]
-then 
-rm tmp*
-echo "removed temporary files."
-
-elif [ $variable2 == "n" ]
-then
-echo "Temporary files not removed."
-
+if [ $variable2 == "y" ]; then 
+  rm tmp*
+  echo "removed temporary files."
+elif [ $variable2 == "n" ]; then
+  echo "Temporary files not removed."
 else
-echo "False input, temporary files not removed; use: rm tmp* if you would like to remove all temporary files created"
+  echo "False input, temporary files not removed; use: rm tmp* if you would like to remove all temporary files created"
 fi
+
+cdo chname,discharge,IAH IndicatorsTotalAverage.nc tmp_description_IndicatorsTotalAverage.nc
+cdo chunit,m3.s-1,"(-)" tmp_description_IndicatorsTotalAverage.nc IndicatorsTotalAverage.nc
+# TO-DO: Change all descriptions and units for the IAHs
+for IAH in IAH*; do
+  cdo chname,discharge,IAH $IAH tmp_description_$IAH
+  cdo chunit,m3.s-1,"(-)" tmp_description_$IAH $IAH
+  rm tmp_description_$IAH
+done
+
